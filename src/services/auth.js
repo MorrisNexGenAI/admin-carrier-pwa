@@ -20,7 +20,7 @@ async function getAuthDB() {
 export async function loginAdmin(username, password) {
   try {
     // Django admin login endpoint
-    const response = await apiClient.post('/core/admin-api-login/', {
+    const response = await apiClient.post('/core/login/', {
       username,
       password,
     });
@@ -64,7 +64,7 @@ export async function getAuthSession() {
 // Logout
 export async function logoutAdmin() {
   try {
-    await apiClient.post('/core/admin-logout/');
+    await apiClient.post('/core/logout/');
   } catch (error) {
     console.error('Logout error:', error);
   } finally {
