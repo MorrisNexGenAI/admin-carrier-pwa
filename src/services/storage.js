@@ -1,5 +1,5 @@
 // ==================== src/services/storage.js ====================
-import { openDB } from 'idb';
+import { openDB, deleteDB } from 'idb';
 
 const DB_NAME = 'admin_carrier_db';
 const DB_VERSION = 1;
@@ -11,97 +11,102 @@ const STORES = {
 
 // Clear/Delete the entire database
 export async function clearDatabase() {
-  return new Promise((resolve, reject) => {
-    const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
-    
-    deleteRequest.onsuccess = () => {
-      console.log('Database deleted successfully');
-      resolve();
-    };
-    
-    deleteRequest.onerror = () => {
-      console.error('Error deleting database:', deleteRequest.error);
-      reject(deleteRequest.error);
-    };
-    
-    deleteRequest.onblocked = () => {
-      console.warn('Database deletion blocked - close all other tabs using this app');
-      reject(new Error('Database deletion blocked'));
-    };
-  });
+  try {
+    await deleteDB(DB_NAME);
+    console.log('Database deleted successfully');
+    return true;
+  } catch (error) {
+    console.error('Error deleting database:', error);
+    throw error;
+  }
 }
 
 // Initialize database with automatic error recovery
 export async function initDB() {
   try {
-    return await openDB(DB_NAME, DB_VERSION, {
+    const db = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion, transaction) {
         console.log(`Upgrading database from version ${oldVersion} to ${newVersion}`);
         
-        // Content store: departments, courses, topics
-        if (!db.objectStoreNames.contains(STORES.CONTENT)) {
-          db.createObjectStore(STORES.CONTENT);
-          console.log('Created CONTENT store');
-        }
+        // Delete old stores if they exist to ensure clean slate
+        const storeNames = Array.from(db.objectStoreNames);
+        storeNames.forEach(name => {
+          if (db.objectStoreNames.contains(name)) {
+            db.deleteObjectStore(name);
+            console.log(`Deleted old store: ${name}`);
+          }
+        });
         
-        // Pending users store
-        if (!db.objectStoreNames.contains(STORES.PENDING_USERS)) {
-          const store = db.createObjectStore(STORES.PENDING_USERS, { 
-            keyPath: 'id', 
-            autoIncrement: true 
-          });
-          store.createIndex('code', 'code', { unique: false });
-          store.createIndex('synced', 'synced', { unique: false });
-          console.log('Created PENDING_USERS store');
-        }
+        // Create content store
+        db.createObjectStore(STORES.CONTENT);
+        console.log('Created CONTENT store');
         
-        // Settings store
-        if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
-          db.createObjectStore(STORES.SETTINGS);
-          console.log('Created SETTINGS store');
-        }
+        // Create pending users store
+        const pendingStore = db.createObjectStore(STORES.PENDING_USERS, { 
+          keyPath: 'id', 
+          autoIncrement: true 
+        });
+        pendingStore.createIndex('code', 'code', { unique: false });
+        pendingStore.createIndex('synced', 'synced', { unique: false });
+        console.log('Created PENDING_USERS store');
+        
+        // Create settings store
+        db.createObjectStore(STORES.SETTINGS);
+        console.log('Created SETTINGS store');
       },
     });
+    
+    // Verify stores were created
+    const storeNames = Array.from(db.objectStoreNames);
+    console.log('Available stores:', storeNames);
+    
+    if (!storeNames.includes(STORES.CONTENT)) {
+      throw new Error('CONTENT store was not created properly');
+    }
+    
+    return db;
   } catch (error) {
-    // Handle version mismatch error
-    if (error.message?.includes('higher version') || 
-        error.name === 'VersionError' ||
-        error.message?.includes('version')) {
-      console.warn('Database version conflict detected - clearing and recreating database');
+    console.error('Database initialization error:', error);
+    
+    // If there's any error, force a clean recreation
+    if (error.message?.includes('not a known object store') || 
+        error.message?.includes('version') ||
+        error.message?.includes('CONTENT store was not created')) {
+      
+      console.warn('Forcing database recreation...');
       
       try {
-        // Delete the old database
+        // Delete the corrupted database
         await clearDatabase();
         
-        // Wait a bit for the deletion to complete
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait a bit for deletion to complete
+        await new Promise(resolve => setTimeout(resolve, 200));
         
         // Retry opening with fresh database
         return await openDB(DB_NAME, DB_VERSION, {
           upgrade(db) {
             // Create all stores fresh
             db.createObjectStore(STORES.CONTENT);
+            console.log('Created CONTENT store (retry)');
             
-            const store = db.createObjectStore(STORES.PENDING_USERS, { 
+            const pendingStore = db.createObjectStore(STORES.PENDING_USERS, { 
               keyPath: 'id', 
               autoIncrement: true 
             });
-            store.createIndex('code', 'code', { unique: false });
-            store.createIndex('synced', 'synced', { unique: false });
+            pendingStore.createIndex('code', 'code', { unique: false });
+            pendingStore.createIndex('synced', 'synced', { unique: false });
+            console.log('Created PENDING_USERS store (retry)');
             
             db.createObjectStore(STORES.SETTINGS);
-            
-            console.log('Database recreated successfully');
+            console.log('Created SETTINGS store (retry)');
           },
         });
       } catch (retryError) {
         console.error('Failed to recreate database:', retryError);
-        throw new Error('Please close all other tabs and refresh the page');
+        throw new Error('Database initialization failed. Please clear your browser data and try again.');
       }
     }
     
-    // Re-throw other errors
-    console.error('Database initialization error:', error);
     throw error;
   }
 }
@@ -111,6 +116,12 @@ export async function initDB() {
 export async function saveContent(data) {
   try {
     const db = await initDB();
+    
+    // Verify the store exists before trying to use it
+    if (!db.objectStoreNames.contains(STORES.CONTENT)) {
+      throw new Error('CONTENT store does not exist in database');
+    }
+    
     const tx = db.transaction(STORES.CONTENT, 'readwrite');
     
     await tx.store.put(data.departments, 'departments');
@@ -282,7 +293,6 @@ export async function getSetting(key) {
 
 // ========== UTILITY FUNCTIONS ==========
 
-// Get database info for debugging
 export async function getDatabaseInfo() {
   try {
     const db = await initDB();
@@ -299,7 +309,6 @@ export async function getDatabaseInfo() {
   }
 }
 
-// Force database reset (useful for debugging)
 export async function resetDatabase() {
   try {
     await clearDatabase();
