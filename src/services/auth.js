@@ -3,7 +3,7 @@ import { apiClient } from './apiClient';
 import { openDB } from 'idb';
 
 const DB_NAME = 'admin_carrier_db';
-const DB_VERSION = 2;   // ✅ MUST MATCH storage.js
+const DB_VERSION = 1;   // ✅ MUST MATCH storage.js
 const AUTH_STORE = 'auth';
 
 // Initialize auth database

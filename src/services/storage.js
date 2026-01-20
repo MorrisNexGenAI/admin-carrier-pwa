@@ -2,7 +2,7 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'admin_carrier_db';
-const DB_VERSION = 2;
+const DB_VERSION = 1;
 
 const STORES = {
   CONTENT: 'content',
