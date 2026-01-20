@@ -17,9 +17,10 @@ async function getAuthDB() {
 }
 
 // Login to Django backend
+// src/services/auth.js
 export async function loginAdmin(username, password) {
   try {
-    const response = await apiClient.post("/auth/login/", {
+    const response = await apiClient.post("/api/auth/login/", {  // Changed
       username,
       password,
     });
@@ -38,13 +39,24 @@ export async function loginAdmin(username, password) {
 
     return { success: true, session };
   } catch (err) {
+    console.error('Login error:', err);
     return {
       success: false,
-      error: "Network or server error",
+      error: err.response?.data?.error || "Network or server error",
     };
   }
 }
 
+export async function logoutAdmin() {
+  try {
+    await apiClient.post('/api/auth/logout/');  // Changed
+  } catch (error) {
+    console.error('Logout error:', error);
+  } finally {
+    const db = await getAuthDB();
+    await db.delete(AUTH_STORE, 'session');
+  }
+}
 // Get current session
 export async function getAuthSession() {
   try {
@@ -57,14 +69,3 @@ export async function getAuthSession() {
   }
 }
 
-// Logout
-export async function logoutAdmin() {
-  try {
-    await apiClient.post('/core/logout/');
-  } catch (error) {
-    console.error('Logout error:', error);
-  } finally {
-    const db = await getAuthDB();
-    await db.delete(AUTH_STORE, 'session');
-  }
-}
