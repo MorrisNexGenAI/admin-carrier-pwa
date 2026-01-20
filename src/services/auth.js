@@ -3,13 +3,12 @@ import { apiClient } from './apiClient';
 import { openDB } from 'idb';
 
 const DB_NAME = 'admin_carrier_db';
-const DB_VERSION = 2;       // UPDATED TO MATCH storage.js
 const AUTH_STORE = 'auth';
 
 // Initialize auth database
 async function getAuthDB() {
-  return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion, newVersion, transaction) {
+  return openDB(DB_NAME, 1, {
+    upgrade(db) {
       if (!db.objectStoreNames.contains(AUTH_STORE)) {
         db.createObjectStore(AUTH_STORE);
       }
@@ -18,9 +17,10 @@ async function getAuthDB() {
 }
 
 // Login to Django backend
+// src/services/auth.js
 export async function loginAdmin(username, password) {
   try {
-    const response = await apiClient.post("/api/auth/login/", {  // Changed
+    const response = await apiClient.post("/auth/login/", {
       username,
       password,
     });
@@ -47,10 +47,9 @@ export async function loginAdmin(username, password) {
   }
 }
 
-// Logout
 export async function logoutAdmin() {
   try {
-    await apiClient.post('/api/auth/logout/');  // Changed
+    await apiClient.post('/auth/logout/');  // Changed
   } catch (error) {
     console.error('Logout error:', error);
   } finally {
@@ -58,7 +57,6 @@ export async function logoutAdmin() {
     await db.delete(AUTH_STORE, 'session');
   }
 }
-
 // Get current session
 export async function getAuthSession() {
   try {
@@ -70,3 +68,4 @@ export async function getAuthSession() {
     return null;
   }
 }
+
