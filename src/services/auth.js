@@ -19,32 +19,28 @@ async function getAuthDB() {
 // Login to Django backend
 export async function loginAdmin(username, password) {
   try {
-    // Django admin login endpoint
-    const response = await apiClient.post('/core/login/', {
+    const response = await apiClient.post("/auth/login/", {
       username,
       password,
     });
 
-    if (response.data.success) {
-      const session = {
-        username,
-        loggedInAt: Date.now(),
-        csrfToken: response.data.csrf_token,
-      };
-
-      // Save session locally
-      const db = await getAuthDB();
-      await db.put(AUTH_STORE, session, 'session');
-
-      return { success: true, session };
+    if (!response.data.success) {
+      return { success: false, error: response.data.error };
     }
 
-    return { success: false, error: 'Invalid credentials' };
-  } catch (error) {
-    console.error('Login error:', error);
-    return { 
-      success: false, 
-      error: error.response?.data?.error || 'Login failed. Check your connection.' 
+    const session = {
+      username: response.data.username,
+      loggedInAt: Date.now(),
+    };
+
+    const db = await getAuthDB();
+    await db.put(AUTH_STORE, session, "session");
+
+    return { success: true, session };
+  } catch (err) {
+    return {
+      success: false,
+      error: "Network or server error",
     };
   }
 }
