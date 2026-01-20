@@ -5,7 +5,7 @@ import { saveContent } from './storage';
 
 export async function downloadContentFromDjango() {
   try {
-    const response = await apiClient.get('/api/admin/bulk-download/');
+    const response = await apiClient.get('/admin/bulk-download/');
     const data = response.data;
 
     // Save to IndexedDB
