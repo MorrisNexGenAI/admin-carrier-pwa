@@ -20,7 +20,7 @@ export async function handleLocalAPIRequest(endpoint, method = 'GET', body = nul
   const content = await getAllContent();
 
   // Health check endpoint
-  if (endpoint === '/health') {
+  if (endpoint === '/api/health') {
     return {
       admin_pwa: true,
       online: true,
@@ -29,12 +29,12 @@ export async function handleLocalAPIRequest(endpoint, method = 'GET', body = nul
   }
 
   // Departments
-  if (endpoint === '/departments/') {
+  if (endpoint === '/api/departments/') {
     return content.departments || [];
   }
 
   // Department courses
-  if (endpoint.match(/^\/departments\/(\d+)\/courses\/$/)) {
+  if (endpoint.match(/^\/api\/departments\/(\d+)\/courses\/$/)) {
     const deptId = parseInt(endpoint.match(/\/departments\/(\d+)\//)[1]);
     const courses = (content.courses || []).filter(c => 
       c.departments.includes(deptId)
@@ -43,7 +43,7 @@ export async function handleLocalAPIRequest(endpoint, method = 'GET', body = nul
   }
 
   // Course topics
-  if (endpoint.match(/^\/courses\/(\d+)\/topics\/$/)) {
+  if (endpoint.match(/^\/api\/courses\/(\d+)\/topics\/$/)) {
     const courseId = parseInt(endpoint.match(/\/courses\/(\d+)\//)[1]);
     const topics = (content.topics || []).filter(t => 
       t.course_id === courseId
@@ -61,7 +61,7 @@ export async function handleLocalAPIRequest(endpoint, method = 'GET', body = nul
   }
 
   // Topic detail
-  if (endpoint.match(/^\/topics\/(\d+)\/$/)) {
+  if (endpoint.match(/^\/api\/topics\/(\d+)\/$/)) {
     const topicId = parseInt(endpoint.match(/\/topics\/(\d+)\//)[1]);
     const topic = (content.topics || []).find(t => t.id === topicId);
     
