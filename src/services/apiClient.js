@@ -1,7 +1,7 @@
 // ==================== src/services/apiClient.js ====================
 import axios from 'axios';
 
-const DJANGO_URL = import.meta.env.VITE_DJANGO_URL || 'https://your-backend.onrender.com';
+const DJANGO_URL = import.meta.env.VITE_DJANGO_URL || 'https://studycompanions-fzrm.onrender.com';
 
 export const apiClient = axios.create({
   baseURL: DJANGO_URL,

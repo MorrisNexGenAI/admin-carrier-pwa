@@ -21,7 +21,7 @@ export async function uploadPendingUsers() {
       department_id: u.department_id || null,
     }));
 
-    const response = await apiClient.post('/api/admin/upload-users/', {
+    const response = await apiClient.post('/admin/upload-users/', {
       users: usersData,
     });
 
