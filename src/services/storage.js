@@ -1,25 +1,19 @@
 // ==================== src/services/storage.js ====================
 import { openDB, deleteDB } from 'idb';
+import { cleanupOnVersionMismatch, forceDeleteDatabase } from './dbCleanup';
 
 const DB_NAME = 'admin_carrier_db';
-const DB_VERSION = 2;  // ← Increment version to trigger upgrade
+const DB_VERSION = 2;
 const STORES = {
   CONTENT: 'content',
   PENDING_USERS: 'pending_users',
   SETTINGS: 'settings',
-  AUTH: 'auth',  // ← Add this
+  AUTH: 'auth',
 };
 
 // Clear/Delete the entire database
 export async function clearDatabase() {
-  try {
-    await deleteDB(DB_NAME);
-    console.log('Database deleted successfully');
-    return true;
-  } catch (error) {
-    console.error('Error deleting database:', error);
-    throw error;
-  }
+  return forceDeleteDatabase();
 }
 
 // Initialize database with automatic error recovery
@@ -55,7 +49,7 @@ export async function initDB() {
         db.createObjectStore(STORES.SETTINGS);
         console.log('Created SETTINGS store');
         
-        // Create auth store  ← Add this
+        // Create auth store
         db.createObjectStore(STORES.AUTH);
         console.log('Created AUTH store');
       },
@@ -84,8 +78,8 @@ export async function initDB() {
       console.warn('Forcing database recreation...');
       
       try {
-        // Delete the corrupted database
-        await clearDatabase();
+        // Use the cleanup service for version mismatch
+        await cleanupOnVersionMismatch();
         
         // Wait a bit for deletion to complete
         await new Promise(resolve => setTimeout(resolve, 200));
@@ -108,7 +102,7 @@ export async function initDB() {
             db.createObjectStore(STORES.SETTINGS);
             console.log('Created SETTINGS store (retry)');
             
-            db.createObjectStore(STORES.AUTH);  // ← Add this
+            db.createObjectStore(STORES.AUTH);
             console.log('Created AUTH store (retry)');
           },
         });
@@ -123,7 +117,6 @@ export async function initDB() {
 }
 
 // ========== CONTENT STORAGE ==========
-// ... (keep all your existing content functions)
 
 export async function saveContent(data) {
   try {
@@ -207,8 +200,7 @@ export async function clearContent() {
   }
 }
 
-// ========== PENDING USERS ========== 
-// ... (keep all your existing pending users functions)
+// ========== PENDING USERS ==========
 
 export async function addPendingUser(userData) {
   try {
@@ -281,7 +273,6 @@ export async function deleteSyncedUsers() {
 }
 
 // ========== SETTINGS ==========
-// ... (keep all your existing settings functions)
 
 export async function saveSetting(key, value) {
   try {
@@ -304,7 +295,7 @@ export async function getSetting(key) {
   }
 }
 
-// ========== AUTH STORAGE (NEW) ==========
+// ========== AUTH STORAGE ==========
 
 export async function saveAuthToken(token) {
   try {
