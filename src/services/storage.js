@@ -3,7 +3,7 @@ import { openDB, deleteDB } from 'idb';
 import { cleanupOnVersionMismatch, forceDeleteDatabase } from './dbCleanup';
 
 const DB_NAME = 'admin_carrier_db';
-const DB_VERSION = 2;
+const DB_VERSION = 1;
 const STORES = {
   CONTENT: 'content',
   PENDING_USERS: 'pending_users',
