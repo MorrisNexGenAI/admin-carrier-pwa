@@ -3,7 +3,7 @@ import { openDB, deleteDB } from 'idb';
 import { cleanupOnVersionMismatch, forceDeleteDatabase } from './dbCleanup';
 
 const DB_NAME = 'admin_carrier_db';
-const DB_VERSION = 1;
+const DB_VERSION = 1;  // Keep at 1 - never increment this again
 const STORES = {
   CONTENT: 'content',
   PENDING_USERS: 'pending_users',
@@ -16,25 +16,56 @@ export async function clearDatabase() {
   return forceDeleteDatabase();
 }
 
+// Check and fix version mismatch before opening DB
+async function checkDatabaseVersion() {
+  return new Promise((resolve) => {
+    const request = indexedDB.open(DB_NAME);
+    
+    request.onsuccess = (event) => {
+      const db = event.target.result;
+      const currentVersion = db.version;
+      db.close();
+      
+      // If stored version is higher than expected, delete it
+      if (currentVersion > DB_VERSION) {
+        console.warn(`Database version mismatch: stored=${currentVersion}, expected=${DB_VERSION}`);
+        indexedDB.deleteDatabase(DB_NAME).onsuccess = () => {
+          console.log('Old database deleted, will create fresh');
+          resolve(true);
+        };
+      } else {
+        resolve(false);
+      }
+    };
+    
+    request.onerror = () => {
+      resolve(false); // Database doesn't exist yet
+    };
+  });
+}
+
 // Initialize database with automatic error recovery
 export async function initDB() {
   try {
+    // First check if we need to delete old version
+    await checkDatabaseVersion();
+    
     const db = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, newVersion, transaction) {
-        console.log(`Upgrading database from version ${oldVersion} to ${newVersion}`);
+        console.log(`[Storage] Upgrading database from version ${oldVersion} to ${newVersion}`);
         
-        // Delete old stores if they exist to ensure clean slate
+        // Delete old stores if they exist
         const storeNames = Array.from(db.objectStoreNames);
         storeNames.forEach(name => {
           if (db.objectStoreNames.contains(name)) {
             db.deleteObjectStore(name);
-            console.log(`Deleted old store: ${name}`);
+            console.log(`[Storage] Deleted old store: ${name}`);
           }
         });
         
         // Create content store
         db.createObjectStore(STORES.CONTENT);
-        console.log('Created CONTENT store');
+        console.log('[Storage] Created CONTENT store');
         
         // Create pending users store
         const pendingStore = db.createObjectStore(STORES.PENDING_USERS, { 
@@ -43,21 +74,21 @@ export async function initDB() {
         });
         pendingStore.createIndex('code', 'code', { unique: false });
         pendingStore.createIndex('synced', 'synced', { unique: false });
-        console.log('Created PENDING_USERS store');
+        console.log('[Storage] Created PENDING_USERS store');
         
         // Create settings store
         db.createObjectStore(STORES.SETTINGS);
-        console.log('Created SETTINGS store');
+        console.log('[Storage] Created SETTINGS store');
         
         // Create auth store
         db.createObjectStore(STORES.AUTH);
-        console.log('Created AUTH store');
+        console.log('[Storage] Created AUTH store');
       },
     });
     
     // Verify stores were created
     const storeNames = Array.from(db.objectStoreNames);
-    console.log('Available stores:', storeNames);
+    console.log('[Storage] Available stores:', storeNames);
     
     const requiredStores = [STORES.CONTENT, STORES.PENDING_USERS, STORES.SETTINGS, STORES.AUTH];
     for (const store of requiredStores) {
@@ -68,47 +99,39 @@ export async function initDB() {
     
     return db;
   } catch (error) {
-    console.error('Database initialization error:', error);
+    console.error('[Storage] Database initialization error:', error);
     
-    // If there's any error, force a clean recreation
-    if (error.message?.includes('not a known object store') || 
+    // Handle version mismatch or store creation errors
+    if (error.message?.includes('higher version') ||
+        error.message?.includes('not a known object store') || 
         error.message?.includes('version') ||
         error.message?.includes('store was not created')) {
       
-      console.warn('Forcing database recreation...');
+      console.warn('[Storage] Forcing database recreation...');
       
       try {
-        // Use the cleanup service for version mismatch
-        await cleanupOnVersionMismatch();
-        
-        // Wait a bit for deletion to complete
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Force delete and recreate
+        await forceDeleteDatabase();
+        await new Promise(resolve => setTimeout(resolve, 300));
         
         // Retry opening with fresh database
         return await openDB(DB_NAME, DB_VERSION, {
           upgrade(db) {
-            // Create all stores fresh
             db.createObjectStore(STORES.CONTENT);
-            console.log('Created CONTENT store (retry)');
-            
             const pendingStore = db.createObjectStore(STORES.PENDING_USERS, { 
               keyPath: 'id', 
               autoIncrement: true 
             });
             pendingStore.createIndex('code', 'code', { unique: false });
             pendingStore.createIndex('synced', 'synced', { unique: false });
-            console.log('Created PENDING_USERS store (retry)');
-            
             db.createObjectStore(STORES.SETTINGS);
-            console.log('Created SETTINGS store (retry)');
-            
             db.createObjectStore(STORES.AUTH);
-            console.log('Created AUTH store (retry)');
+            console.log('[Storage] Database recreated successfully');
           },
         });
       } catch (retryError) {
-        console.error('Failed to recreate database:', retryError);
-        throw new Error('Database initialization failed. Please clear your browser data and try again.');
+        console.error('[Storage] Failed to recreate database:', retryError);
+        throw new Error('Database initialization failed. Please refresh the page.');
       }
     }
     
@@ -139,10 +162,10 @@ export async function saveContent(data) {
     }, 'sync_info');
     
     await tx.done;
-    console.log('Content saved successfully');
+    console.log('[Storage] Content saved successfully');
     return true;
   } catch (error) {
-    console.error('Error saving content:', error);
+    console.error('[Storage] Error saving content:', error);
     throw error;
   }
 }
@@ -152,7 +175,7 @@ export async function getContent(key) {
     const db = await initDB();
     return await db.get(STORES.CONTENT, key);
   } catch (error) {
-    console.error(`Error getting content for key ${key}:`, error);
+    console.error(`[Storage] Error getting content for key ${key}:`, error);
     return null;
   }
 }
@@ -176,7 +199,7 @@ export async function getAllContent() {
       sync_info: sync_info || null,
     };
   } catch (error) {
-    console.error('Error getting all content:', error);
+    console.error('[Storage] Error getting all content:', error);
     return {
       departments: [],
       courses: [],
@@ -193,9 +216,9 @@ export async function clearContent() {
     const tx = db.transaction(STORES.CONTENT, 'readwrite');
     await tx.store.clear();
     await tx.done;
-    console.log('Content cleared successfully');
+    console.log('[Storage] Content cleared successfully');
   } catch (error) {
-    console.error('Error clearing content:', error);
+    console.error('[Storage] Error clearing content:', error);
     throw error;
   }
 }
@@ -211,10 +234,10 @@ export async function addPendingUser(userData) {
       created_at: Date.now(),
     };
     const id = await db.add(STORES.PENDING_USERS, user);
-    console.log('Pending user added:', id);
+    console.log('[Storage] Pending user added:', id);
     return id;
   } catch (error) {
-    console.error('Error adding pending user:', error);
+    console.error('[Storage] Error adding pending user:', error);
     throw error;
   }
 }
@@ -225,7 +248,7 @@ export async function getPendingUsers() {
     const users = await db.getAllFromIndex(STORES.PENDING_USERS, 'synced', 0);
     return users;
   } catch (error) {
-    console.error('Error getting pending users:', error);
+    console.error('[Storage] Error getting pending users:', error);
     return [];
   }
 }
@@ -245,9 +268,9 @@ export async function markUsersSynced(userIds) {
     }
     
     await tx.done;
-    console.log('Users marked as synced:', userIds);
+    console.log('[Storage] Users marked as synced:', userIds);
   } catch (error) {
-    console.error('Error marking users as synced:', error);
+    console.error('[Storage] Error marking users as synced:', error);
     throw error;
   }
 }
@@ -265,9 +288,9 @@ export async function deleteSyncedUsers() {
     }
     
     await tx.done;
-    console.log('Synced users deleted');
+    console.log('[Storage] Synced users deleted');
   } catch (error) {
-    console.error('Error deleting synced users:', error);
+    console.error('[Storage] Error deleting synced users:', error);
     throw error;
   }
 }
@@ -278,9 +301,9 @@ export async function saveSetting(key, value) {
   try {
     const db = await initDB();
     await db.put(STORES.SETTINGS, value, key);
-    console.log(`Setting saved: ${key}`);
+    console.log(`[Storage] Setting saved: ${key}`);
   } catch (error) {
-    console.error(`Error saving setting ${key}:`, error);
+    console.error(`[Storage] Error saving setting ${key}:`, error);
     throw error;
   }
 }
@@ -290,20 +313,90 @@ export async function getSetting(key) {
     const db = await initDB();
     return await db.get(STORES.SETTINGS, key);
   } catch (error) {
-    console.error(`Error getting setting ${key}:`, error);
+    console.error(`[Storage] Error getting setting ${key}:`, error);
     return null;
   }
 }
 
-// ========== AUTH STORAGE ==========
+// ========== AUTH STORAGE (PERSISTENT SESSION) ==========
 
+/**
+ * Save user session - persists across browser refreshes
+ */
+export async function saveUserSession(userData) {
+  try {
+    const db = await initDB();
+    const sessionData = {
+      ...userData,
+      savedAt: Date.now(),
+      expiresAt: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
+    };
+    await db.put(STORES.AUTH, sessionData, 'user_session');
+    console.log('[Storage] User session saved');
+    return true;
+  } catch (error) {
+    console.error('[Storage] Error saving user session:', error);
+    return false;
+  }
+}
+
+/**
+ * Get user session - returns null if expired
+ */
+export async function getUserSession() {
+  try {
+    const db = await initDB();
+    const session = await db.get(STORES.AUTH, 'user_session');
+    
+    if (!session) {
+      return null;
+    }
+    
+    // Check if session expired
+    if (session.expiresAt && Date.now() > session.expiresAt) {
+      console.log('[Storage] Session expired, clearing...');
+      await clearUserSession();
+      return null;
+    }
+    
+    return session;
+  } catch (error) {
+    console.error('[Storage] Error getting user session:', error);
+    return null;
+  }
+}
+
+/**
+ * Clear user session - call this on logout
+ */
+export async function clearUserSession() {
+  try {
+    const db = await initDB();
+    await db.delete(STORES.AUTH, 'user_session');
+    console.log('[Storage] User session cleared');
+    return true;
+  } catch (error) {
+    console.error('[Storage] Error clearing user session:', error);
+    return false;
+  }
+}
+
+/**
+ * Check if user is logged in
+ */
+export async function isUserLoggedIn() {
+  const session = await getUserSession();
+  return session !== null;
+}
+
+// Legacy auth functions (keep for compatibility)
 export async function saveAuthToken(token) {
   try {
     const db = await initDB();
     await db.put(STORES.AUTH, token, 'token');
-    console.log('Auth token saved');
+    console.log('[Storage] Auth token saved');
   } catch (error) {
-    console.error('Error saving auth token:', error);
+    console.error('[Storage] Error saving auth token:', error);
     throw error;
   }
 }
@@ -313,7 +406,7 @@ export async function getAuthToken() {
     const db = await initDB();
     return await db.get(STORES.AUTH, 'token');
   } catch (error) {
-    console.error('Error getting auth token:', error);
+    console.error('[Storage] Error getting auth token:', error);
     return null;
   }
 }
@@ -324,43 +417,26 @@ export async function clearAuthToken() {
     const tx = db.transaction(STORES.AUTH, 'readwrite');
     await tx.store.clear();
     await tx.done;
-    console.log('Auth token cleared');
+    console.log('[Storage] Auth token cleared');
   } catch (error) {
-    console.error('Error clearing auth token:', error);
+    console.error('[Storage] Error clearing auth token:', error);
     throw error;
   }
 }
 
+// Deprecated - use saveUserSession instead
 export async function saveSession(sessionData) {
-  try {
-    const db = await initDB();
-    await db.put(STORES.AUTH, sessionData, 'session');
-    console.log('Session saved');
-  } catch (error) {
-    console.error('Error saving session:', error);
-    throw error;
-  }
+  return saveUserSession(sessionData);
 }
 
+// Deprecated - use getUserSession instead
 export async function getSession() {
-  try {
-    const db = await initDB();
-    return await db.get(STORES.AUTH, 'session');
-  } catch (error) {
-    console.error('Error getting session:', error);
-    return null;
-  }
+  return getUserSession();
 }
 
+// Deprecated - use clearUserSession instead
 export async function clearSession() {
-  try {
-    const db = await initDB();
-    await db.delete(STORES.AUTH, 'session');
-    console.log('Session cleared');
-  } catch (error) {
-    console.error('Error clearing session:', error);
-    throw error;
-  }
+  return clearUserSession();
 }
 
 // ========== UTILITY FUNCTIONS ==========
@@ -373,10 +449,10 @@ export async function getDatabaseInfo() {
       version: DB_VERSION,
       stores: Array.from(db.objectStoreNames),
     };
-    console.log('Database info:', info);
+    console.log('[Storage] Database info:', info);
     return info;
   } catch (error) {
-    console.error('Error getting database info:', error);
+    console.error('[Storage] Error getting database info:', error);
     return null;
   }
 }
@@ -385,10 +461,10 @@ export async function resetDatabase() {
   try {
     await clearDatabase();
     await initDB();
-    console.log('Database reset complete');
+    console.log('[Storage] Database reset complete');
     return true;
   } catch (error) {
-    console.error('Error resetting database:', error);
+    console.error('[Storage] Error resetting database:', error);
     return false;
   }
 }
