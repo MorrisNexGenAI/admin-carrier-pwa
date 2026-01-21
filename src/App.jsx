@@ -20,24 +20,24 @@ function App() {
     try {
       console.log('[App] Initializing...');
 
-      // Initialize auto cleanup listeners
+      // Start auto cleanup (non-blocking)
       initAutoCleanup();
 
-      // Try to restore session from IndexedDB
-      const session = await getAuthSession();
+      // Try to restore session with timeout
+      const session = await promiseWithTimeout(getAuthSession(), 5000, 'getAuthSession timed out');
+      console.log('[App] getAuthSession result:', session);
 
       if (session) {
         console.log('[App] Session found, verifying with backend...');
-        
-        // Verify session is still valid with backend
-        const isValid = await verifySession();
+        const isValid = await promiseWithTimeout(verifySession(), 5000, 'verifySession timed out');
+        console.log('[App] verifySession result:', isValid);
 
         if (isValid) {
           setUser(session);
           setIsAuthenticated(true);
-          console.log('[App] Session restored successfully for:', session.username);
+          console.log('[App] Session restored for:', session.username);
         } else {
-          console.log('[App] Session expired or invalid');
+          console.log('[App] Session invalid or expired');
           setUser(null);
           setIsAuthenticated(false);
         }
@@ -55,12 +55,31 @@ function App() {
     }
   };
 
+  // Utility: wraps a promise with a timeout
+  const promiseWithTimeout = (promise, ms, errorMsg) => {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+      promise
+        .then((res) => {
+          clearTimeout(timer);
+          resolve(res);
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+    });
+  };
+
   const handleLoginSuccess = async () => {
-    // Re-check auth after login
-    const session = await getAuthSession();
-    if (session) {
-      setUser(session);
-      setIsAuthenticated(true);
+    try {
+      const session = await promiseWithTimeout(getAuthSession(), 5000, 'getAuthSession timed out on login');
+      if (session) {
+        setUser(session);
+        setIsAuthenticated(true);
+      }
+    } catch (error) {
+      console.error('[App] Login session error:', error);
     }
   };
 
