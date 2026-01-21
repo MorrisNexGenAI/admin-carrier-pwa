@@ -148,7 +148,7 @@ function App() {
               ? <SettingsPage user={user} onLogout={handleLogout} /> 
               : <Navigate to="/login" replace />
           } 
-        />
+        /> 
       </Routes>
     </BrowserRouter>
   );

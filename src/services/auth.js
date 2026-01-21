@@ -1,40 +1,53 @@
-// ==================== src/services/auth.js ====================
 import { apiClient } from './apiClient';
 import { saveUserSession, getUserSession, clearUserSession } from './storage';
 import { performLogout } from './dbCleanup';
+
+/**
+ * Utility: wrap a promise with timeout
+ */
+async function withTimeout(promise, ms, fallback) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+  });
+}
 
 /**
  * Login to Django backend
  */
 export async function loginAdmin(username, password) {
   try {
-    const response = await apiClient.post("/auth/login/", {
-      username,
-      password,
-    });
+    const response = await withTimeout(
+      apiClient.post("/auth/login/", { username, password }),
+      15000, // 15s timeout for mobile
+      { data: { success: false, error: "Timeout or network error" } }
+    );
 
     if (!response.data.success) {
       return { success: false, error: response.data.error };
     }
 
-    // Save session to IndexedDB (with 7-day expiration)
     const session = {
       username: response.data.username,
       userId: response.data.user_id,
-      isAdmin: response.data.is_admin || true,
+      isAdmin: response.data.is_admin ?? true,
       loggedInAt: Date.now(),
     };
 
     await saveUserSession(session);
-
     console.log('[Auth] Login successful');
     return { success: true, session };
   } catch (err) {
     console.error('[Auth] Login error:', err);
-    return {
-      success: false,
-      error: err.response?.data?.error || "Network or server error",
-    };
+    return { success: false, error: "Network or server error" };
   }
 }
 
@@ -44,36 +57,26 @@ export async function loginAdmin(username, password) {
 export async function logoutAdmin() {
   try {
     console.log('[Auth] Starting logout...');
-
-    // Call backend logout endpoint
-    try {
-      await apiClient.post('/auth/logout/');
-    } catch (error) {
-      console.warn('[Auth] Backend logout failed, continuing with local cleanup');
-    }
-
-    // Perform complete cleanup (IndexedDB, localStorage, etc.)
+    await withTimeout(apiClient.post('/auth/logout/'), 10000, null);
     await performLogout();
-
     console.log('[Auth] Logout complete');
     return true;
-  } catch (error) {
-    console.error('[Auth] Logout error:', error);
-    // Force cleanup even on error
+  } catch (err) {
+    console.error('[Auth] Logout error:', err);
     await performLogout();
     return false;
   }
 }
 
 /**
- * Get current session from IndexedDB
+ * Get current session from IndexedDB safely
  */
 export async function getAuthSession() {
   try {
-    const session = await getUserSession();
+    const session = await withTimeout(getUserSession(), 5000, null);
     return session;
-  } catch (error) {
-    console.error('[Auth] Get session error:', error);
+  } catch (err) {
+    console.warn('[Auth] getAuthSession failed:', err);
     return null;
   }
 }
@@ -87,18 +90,19 @@ export async function isAuthenticated() {
 }
 
 /**
- * Verify session with backend
+ * Verify session with backend safely
  */
 export async function verifySession() {
   try {
-    const response = await apiClient.get('/auth/me/');
-    
+    const response = await withTimeout(apiClient.get('/auth/me/'), 10000, null);
+    if (!response || !response.data) return false;
+
     if (response.data.authenticated) {
       // Update session with fresh data
       await saveUserSession({
         username: response.data.username,
         userId: response.data.user_id,
-        isAdmin: response.data.is_admin || true,
+        isAdmin: response.data.is_admin ?? true,
         loggedInAt: Date.now(),
       });
       return true;
@@ -107,14 +111,13 @@ export async function verifySession() {
     // Session invalid, clear it
     await clearUserSession();
     return false;
-  } catch (error) {
-    console.error('[Auth] Session verification failed:', error);
-    // Don't clear session on network errors, only on 401/403
-    if (error.response?.status === 401 || error.response?.status === 403) {
+  } catch (err) {
+    console.warn('[Auth] verifySession error:', err.message || err);
+    if (err.response?.status === 401 || err.response?.status === 403) {
       await clearUserSession();
       return false;
     }
-    // For network errors, assume session is still valid
-    return true;
+    // Network error: fallback to false for safety on mobile
+    return false;
   }
 }
